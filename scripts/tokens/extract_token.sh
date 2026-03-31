@@ -49,7 +49,11 @@ export MKL_NUM_THREADS=1
 # -------------------------------
 #  Install
 # -------------------------------
-source scripts/install_env.sh
+if [ -n "$SLURM_JOB_ID" ]; then
+    uv sync --extra train --extra cu126
+else
+    uv sync --extra train --extra cu130
+fi
 
 # Create sbatch output dir if needed
 if [ -n "$SLURM_JOB_ID" ]; then

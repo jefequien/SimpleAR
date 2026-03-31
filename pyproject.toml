@@ -24,7 +24,6 @@ standalone = [
     "ftfy",
 ]
 
-
 train = [
     "simpar[standalone]",
     "numpy==1.26.1",
@@ -34,8 +33,6 @@ train = [
     "numpy",
     "requests",
     "sentencepiece",
-    "torch==2.11.0+cu130",
-    "torchvision==0.26.0+cu130",
     "uvicorn",
     "wandb",
     "deepspeed==0.14.4",
@@ -65,18 +62,46 @@ train = [
     "trl==0.15.2",
 ]
 
+# CUDA-version-specific extras — pick one when installing:
+#   Local (CUDA 13.0): uv sync --extra train --extra cu130
+#   Slurm  (CUDA 12.6): uv sync --extra train --extra cu126
+cu130 = [
+    "torch==2.11.0+cu130",
+    "torchvision==0.26.0+cu130",
+]
+cu126 = [
+    "torch==2.11.0+cu126",
+    "torchvision==0.26.0+cu126",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
 ]
 
+[tool.uv]
+conflicts = [
+    [{ extra = "cu130" }, { extra = "cu126" }],
+]
+
 [tool.uv.sources]
-torch = { index = "pytorch-cu130" }
-torchvision = { index = "pytorch-cu130" }
+torch = [
+    { index = "pytorch-cu130", extra = "cu130" },
+    { index = "pytorch-cu126", extra = "cu126" },
+]
+torchvision = [
+    { index = "pytorch-cu130", extra = "cu130" },
+    { index = "pytorch-cu126", extra = "cu126" },
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu130"
 url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
 [tool.setuptools.packages.find]

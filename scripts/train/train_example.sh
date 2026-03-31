@@ -52,7 +52,11 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # -------------------------------
 #  Install
 # -------------------------------
-source scripts/install_env.sh
+if [ -n "$SLURM_JOB_ID" ]; then
+    uv sync --extra train --extra cu126
+else
+    uv sync --extra train --extra cu130
+fi
 
 # Persist compiled Triton kernels in the repo's .cache dir (portable across machines)
 # SLURM_SUBMIT_DIR is set by sbatch to the submission directory; fall back to $PWD for local runs.

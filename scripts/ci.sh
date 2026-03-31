@@ -31,9 +31,26 @@ if [ -n "$SLURM_JOB_ID" ]; then
 fi
 
 # -------------------------------
+#  Environment info
+# -------------------------------
+echo "=== Environment ==="
+echo "Date:        $(date)"
+echo "Host:        $(hostname)"
+echo "User:        $(whoami)"
+echo "Python:      $(uv run python --version 2>&1)"
+echo "CUDA devices: ${CUDA_VISIBLE_DEVICES:-all}"
+uv run python -c "import torch; print('PyTorch:    ', torch.__version__); print('CUDA avail: ', torch.cuda.is_available()); [print(f'  GPU {i}:    {torch.cuda.get_device_name(i)}') for i in range(torch.cuda.device_count())]" 2>/dev/null || echo "PyTorch:     not installed yet"
+echo "Driver:      $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || echo 'N/A')"
+echo "==================="
+
+# -------------------------------
 #  Install
 # -------------------------------
-source scripts/install_env.sh
+if [ -n "$SLURM_JOB_ID" ]; then
+    uv sync --extra train --extra cu126
+else
+    uv sync --extra train --extra cu130
+fi
 
 # -------------------------------
 #  Test
