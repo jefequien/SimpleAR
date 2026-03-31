@@ -52,7 +52,6 @@ train = [
     "timm",
     "hf_transfer",
     "opencv-python",
-    "av",
     "tyro",
     "scipy",
     "pytorch_lightning",

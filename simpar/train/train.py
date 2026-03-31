@@ -46,7 +46,7 @@ from simpar.train.llava_trainer import LLaVATrainer, ImageLoggingCallback
 from simpar import conversation as conversation_lib
 from simpar.model import *
 from simpar.mm_utils import process_highres_image, process_anyres_image, process_highres_image_crop_split
-from simpar.utils import rank0_print, process_video_with_decord
+from simpar.utils import rank0_print
 from simpar.train.t2i_data import T2IDataset
 from simpar.train.t2token_data import T2TokenDataset
 from simpar.train.preprocess import preprocess, preprocess_multimodal
@@ -565,14 +565,9 @@ class LazySupervisedDataset(Dataset):
                                 video.append(frame)
                         except IOError:
                             print(f"Failed to read frame at path: {frame_path}")
-                else:
-                    video, video_time, frame_time, num_frames_to_sample = process_video_with_decord(video_file, self.data_args)
 
                 processor = self.data_args.image_processor
                 image = processor.preprocess(video, return_tensors="pt")["pixel_values"]
-                if self.data_args.add_time_instruction:
-                    time_instruciton = f"The video lasts for {video_time:.2f} seconds, and {num_frames_to_sample} frames are uniformly sampled from it. These frames are located at {frame_time}.Please answer the following questions related to this video."
-                    sources[0]["conversations"][0]["value"] = f'{DEFAULT_IMAGE_TOKEN}\n{time_instruciton}\n{sources[0]["conversations"][0]["value"].replace(DEFAULT_IMAGE_TOKEN, "")}'
                 image = [(image, video[0].size, "video")]
                 sources = preprocess_multimodal(copy.deepcopy([e["conversations"] for e in sources]), self.data_args)
                 # print(sources)
