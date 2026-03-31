@@ -27,7 +27,7 @@ RESOLUTION=1024
 # -------------------------------
 #  Environment setup
 # -------------------------------
-if command -v module &> /dev/null; then
+if [ -n "$SLURM_JOB_ID" ] && command -v module &> /dev/null; then
     module load cuda/12.6 cudatoolkit/24.11_12.6 gcc-native/13.2
     module load brics/nccl brics/aws-ofi-nccl 2>/dev/null || true
 fi
@@ -49,11 +49,7 @@ export MKL_NUM_THREADS=1
 # -------------------------------
 #  Install
 # -------------------------------
-if [ -n "$SLURM_JOB_ID" ]; then
-    uv sync --extra train --extra cu126
-else
-    uv sync --extra train --extra cu130
-fi
+uv sync
 
 # Create sbatch output dir if needed
 if [ -n "$SLURM_JOB_ID" ]; then

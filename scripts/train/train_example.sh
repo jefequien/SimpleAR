@@ -29,7 +29,7 @@ RUN_NAME="${DATE}_sft_imagenet_val"
 # -------------------------------
 #  Environment setup
 # -------------------------------
-if command -v module &> /dev/null; then
+if [ -n "$SLURM_JOB_ID" ] && command -v module &> /dev/null; then
     module load cuda/12.6 cudatoolkit/24.11_12.6 gcc-native/13.2
     module load brics/nccl brics/aws-ofi-nccl 2>/dev/null || true
 fi
@@ -52,11 +52,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # -------------------------------
 #  Install
 # -------------------------------
-if [ -n "$SLURM_JOB_ID" ]; then
-    uv sync --extra train --extra cu126
-else
-    uv sync --extra train --extra cu130
-fi
+uv sync
 
 # Persist compiled Triton kernels in the repo's .cache dir (portable across machines)
 # SLURM_SUBMIT_DIR is set by sbatch to the submission directory; fall back to $PWD for local runs.
@@ -100,7 +96,7 @@ uv run torchrun \
     --lr_scheduler_type "constant" \
     --logging_steps 1 \
     --tf32 True \
-    --model_max_length 4352 \
+    --model_max_length 4608 \
     --dataloader_num_workers 16 \
     --lazy_preprocess True \
     --torch_compile True \

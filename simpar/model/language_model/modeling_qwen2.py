@@ -34,6 +34,7 @@ from transformers.cache_utils import Cache, DynamicCache
 from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask, _prepare_4d_causal_attention_mask_for_sdpa
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast, SequenceClassifierOutputWithPast
 from transformers.modeling_utils import PreTrainedModel
+from transformers.generation import GenerationMixin
 from transformers.utils import (
     add_start_docstrings,
     add_start_docstrings_to_model_forward,
@@ -273,7 +274,7 @@ class Qwen2Attention(nn.Module):
                     "for auto-regressive decoding with k/v caching, please make sure to initialize the attention class "
                     "with a layer index."
                 )
-            kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
+            kv_seq_len += past_key_value.get_seq_length(self.layer_idx)
         
         cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
@@ -377,7 +378,7 @@ class Qwen2FlashAttention2(Qwen2Attention):
                     "for auto-regressive decoding with k/v caching, please make sure to initialize the attention class "
                     "with a layer index."
                 )
-            kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
+            kv_seq_len += past_key_value.get_seq_length(self.layer_idx)
 
         # Because the input can be padded, the absolute sequence length depends on the max position id.
         rotary_seq_len = max(kv_seq_len, position_ids[:, -1].max().item()) + 1
@@ -671,7 +672,7 @@ class Qwen2SdpaAttention(Qwen2Attention):
 
         kv_seq_len = key_states.shape[-2]
         if past_key_value is not None:
-            kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
+            kv_seq_len += past_key_value.get_seq_length(self.layer_idx)
         
         cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
@@ -957,6 +958,7 @@ class Qwen2Model(Qwen2PreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -989,7 +991,7 @@ class Qwen2Model(Qwen2PreTrainedModel):
             use_legacy_cache = not isinstance(past_key_values, Cache)
             if use_legacy_cache:
                 past_key_values = DynamicCache.from_legacy_cache(past_key_values)
-            past_key_values_length = past_key_values.get_usable_length(seq_length)
+            past_key_values_length = past_key_values.get_seq_length()
 
         if position_ids is None:
             device = input_ids.device if input_ids is not None else inputs_embeds.device
@@ -1094,7 +1096,7 @@ class Qwen2Model(Qwen2PreTrainedModel):
         )
 
 
-class Qwen2ForCausalLM(Qwen2PreTrainedModel):
+class Qwen2ForCausalLM(Qwen2PreTrainedModel, GenerationMixin):
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config):
@@ -1138,6 +1140,7 @@ class Qwen2ForCausalLM(Qwen2PreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:
@@ -1181,7 +1184,8 @@ class Qwen2ForCausalLM(Qwen2PreTrainedModel):
             use_cache=use_cache,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
-            return_dict=return_dict
+            return_dict=return_dict,
+            cache_position=cache_position,
         )
 
         hidden_states = outputs[0]
@@ -1213,71 +1217,6 @@ class Qwen2ForCausalLM(Qwen2PreTrainedModel):
             attentions=outputs.attentions,
         )
 
-    def prepare_inputs_for_generation(
-        self, input_ids, past_key_values=None, attention_mask=None, inputs_embeds=None, **kwargs
-    ):
-        # Omit tokens covered by past_key_values
-        if past_key_values is not None:
-            if isinstance(past_key_values, Cache):
-                cache_length = past_key_values.get_seq_length()
-                past_length = past_key_values.seen_tokens
-                max_cache_length = past_key_values.get_max_length()
-            else:
-                cache_length = past_length = past_key_values[0][0].shape[2]
-                max_cache_length = None
-
-            # Keep only the unprocessed tokens:
-            # 1 - If the length of the attention_mask exceeds the length of input_ids, then we are in a setting where
-            # some of the inputs are exclusively passed as part of the cache (e.g. when passing input_embeds as
-            # input)
-            if attention_mask is not None and attention_mask.shape[1] > input_ids.shape[1]:
-                input_ids = input_ids[:, -(attention_mask.shape[1] - past_length) :]
-            # 2 - If the past_length is smaller than input_ids', then input_ids holds all input tokens. We can discard
-            # input_ids based on the past_length.
-            elif past_length < input_ids.shape[1]:
-                input_ids = input_ids[:, past_length:]
-            # 3 - Otherwise (past_length >= input_ids.shape[1]), let's assume input_ids only has unprocessed tokens.
-
-            # If we are about to go beyond the maximum cache length, we need to crop the input attention mask.
-            if (
-                max_cache_length is not None
-                and attention_mask is not None
-                and cache_length + input_ids.shape[1] > max_cache_length
-            ):
-                attention_mask = attention_mask[:, -max_cache_length:]
-
-        position_ids = kwargs.get("position_ids", None)
-        if attention_mask is not None and position_ids is None:
-            # create position_ids on the fly for batch generation
-            position_ids = attention_mask.long().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
-            if past_key_values:
-                position_ids = position_ids[:, -input_ids.shape[1] :]
-
-        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
-
-        model_inputs.update(
-            {
-                "position_ids": position_ids,
-                "past_key_values": past_key_values,
-                "use_cache": kwargs.get("use_cache"),
-                "attention_mask": attention_mask,
-            }
-        )
-        return model_inputs
-
-    @staticmethod
-    def _reorder_cache(past_key_values, beam_idx):
-        reordered_past = ()
-        for layer_past in past_key_values:
-            reordered_past += (
-                tuple(past_state.index_select(0, beam_idx.to(past_state.device)) for past_state in layer_past),
-            )
-        return reordered_past
 
 
 @add_start_docstrings(

@@ -316,18 +316,22 @@ class ImageLoggingCallback(TrainerCallback):
         if args.log_images_every <= 0 or step % args.log_images_every != 0:
             return
 
+        import time
         import wandb
         from torchvision.utils import make_grid
 
         model.eval()
+        t0 = time.perf_counter()
         try:
             for use_cfg, tag in [(True, "train/images_cfg"), (False, "train/images_no_cfg")]:
                 images = self._generate(model, use_cfg)
                 if state.is_world_process_zero:
-                    grid = make_grid(images, nrow=4)
+                    grid = make_grid(images, nrow=len(images))
                     wandb.log({tag: wandb.Image(grid.float().permute(1, 2, 0).numpy())}, step=step)
         finally:
             model.train()
+        if state.is_world_process_zero:
+            wandb.log({"train/visualization_time": time.perf_counter() - t0}, step=step)
 
 
 class LLaVATrainer(Trainer):

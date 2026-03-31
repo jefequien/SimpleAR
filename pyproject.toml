@@ -1,6 +1,3 @@
-[tool.black]
-line-length = 240
-
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
@@ -10,68 +7,52 @@ name = "simpar"
 version = "1.7.0.dev0"
 description = "SimpAR: Pushing the Frontier of Autoregressive Visual Generation through Pretraining, SFT, and RL"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Apache Software License",
 ]
-
-[project.optional-dependencies]
-standalone = [
-    "shortuuid",
-    "httpx==0.24.0",
-    "einops",
-    "ftfy",
-]
-
-train = [
-    "simpar[standalone]",
-    "numpy==1.26.1",
-    "open_clip_torch",
-    "fastapi",
-    "markdown2[all]",
-    "numpy",
-    "requests",
-    "sentencepiece",
-    "uvicorn",
-    "wandb",
-    "deepspeed==0.14.4",
-    "peft==0.4.0",
+dependencies = [
+    # Core
     "accelerate>=0.29.1",
+    "transformers>=4.56.0,<5",
+    "trl==0.15.2",
+    "peft==0.4.0",
+    "deepspeed==0.14.4",
     "bitsandbytes>=0.49.2",
-    "sentencepiece>=0.2.0",
+    "torch>=2.9.0",
+    "torchvision>=0.24.0",
+    # Data
+    "datasets",
+    "numpy>=1.26.1",
+    "scipy",
+    "ijson",
+    # Vision
     "einops==0.6.1",
     "einops-exts==0.0.4",
-    "gradio_client==0.2.9",
-    "urllib3<=2.0.0",
-    "datasets",
-    "pydantic==1.10.8",
+    "open_clip_torch",
     "timm",
-    "hf_transfer",
     "opencv-python",
-    "tyro",
-    "scipy",
-    "pytorch_lightning",
-    "loguru",
-    "mediapy",
-    "iopath",
     "imageio",
-    "ijson",
-    "transformers@git+https://github.com/huggingface/transformers.git@7bbc62474391aff64f63fcc064c975752d1fa4de",
-    "tokenizers==0.20.1",
-    "trl==0.15.2",
-]
-
-# CUDA-version-specific extras — pick one when installing:
-#   Local (CUDA 13.0): uv sync --extra train --extra cu130
-#   Slurm  (CUDA 12.6): uv sync --extra train --extra cu126
-cu130 = [
-    "torch==2.11.0+cu130",
-    "torchvision==0.26.0+cu130",
-]
-cu126 = [
-    "torch==2.11.0+cu126",
-    "torchvision==0.26.0+cu126",
+    "mediapy",
+    # Logging / experiment tracking
+    "wandb",
+    "loguru",
+    # Utilities
+    "ftfy",
+    "httpx>=0.24.0",
+    "hf_transfer",
+    "iopath",
+    "pydantic",
+    "requests",
+    "sentencepiece>=0.2.0",
+    "shortuuid",
+    "tyro",
+    "pytorch_lightning",
+    # Serving
+    "fastapi",
+    "uvicorn",
+    "markdown2[all]",
 ]
 
 [dependency-groups]
@@ -79,62 +60,23 @@ dev = [
     "pytest>=9.0.2",
 ]
 
-[tool.uv]
-conflicts = [
-    [{ extra = "cu130" }, { extra = "cu126" }],
-]
-
-[tool.uv.sources]
-torch = [
-    { index = "pytorch-cu130", extra = "cu130" },
-    { index = "pytorch-cu126", extra = "cu126" },
-]
-torchvision = [
-    { index = "pytorch-cu130", extra = "cu130" },
-    { index = "pytorch-cu126", extra = "cu126" },
-]
-
-[[tool.uv.index]]
-name = "pytorch-cu130"
-url = "https://download.pytorch.org/whl/cu130"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cu126"
-url = "https://download.pytorch.org/whl/cu126"
-explicit = true
-
 [tool.setuptools.packages.find]
 include = ["simpar*", "trl*"]
 exclude = [
     "assets*",
     "benchmark*",
-    "docs",
+    "checkpoints*",
+    "debug_checkpoints*",
     "dist*",
+    "docs",
+    "mlx_configs*",
+    "notebooks*",
     "playground*",
+    "project_checkpoints*",
     "scripts*",
     "tests*",
-    "checkpoints*",
-    "project_checkpoints*",
-    "debug_checkpoints*",
-    "mlx_configs*",
     "wandb*",
-    "notebooks*",
 ]
 
-[tool.wheel]
-exclude = [
-    "assets*",
-    "benchmark*",
-    "docs",
-    "dist*",
-    "playground*",
-    "scripts*",
-    "tests*",
-    "checkpoints*",
-    "project_checkpoints*",
-    "debug_checkpoints*",
-    "mlx_configs*",
-    "wandb*",
-    "notebooks*",
-]
+[tool.black]
+line-length = 240

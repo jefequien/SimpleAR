@@ -1105,7 +1105,7 @@ def train(attn_implementation=None):
     if training_args.log_images_every > 0:
         import random, numpy as _np
         dataset = data_module["train_dataset"]
-        indices = random.sample(range(len(dataset)), min(16, len(dataset)))
+        indices = random.sample(range(len(dataset)), min(2, len(dataset)))
         log_prompts = []
         for idx in indices:
             with open(dataset.list_data_dict[idx]["label_path"]) as f:

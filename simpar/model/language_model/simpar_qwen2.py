@@ -19,11 +19,11 @@ import torch
 import torch.nn.functional as F
 
 from transformers.generation.utils import GenerateOutput
-from transformers import LogitsWarper, LogitsProcessorList, TemperatureLogitsWarper
+from transformers import LogitsProcessor, LogitsProcessorList, TemperatureLogitsWarper
 from .modeling_qwen2 import Qwen2ForCausalLM
 
 
-class CFGLogits(LogitsWarper):
+class CFGLogits(LogitsProcessor):
 
     def __init__(self, cfg, unconditional_inputs, model, verbose=True):
         self.cfg = cfg
