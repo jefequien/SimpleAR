@@ -35,6 +35,16 @@ checkpoints/
 chunyl_scripts
 *.ipynb
 
+# Cache
+.cache/
+
+# Test outputs
+outputs/
+
+# Data
+data/
+*.png
+
 # DevContainer
 !.devcontainer/*
 

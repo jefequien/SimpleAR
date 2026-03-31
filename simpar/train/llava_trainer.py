@@ -10,7 +10,7 @@ from torch.utils.data import Dataset, Sampler, DataLoader
 from trl.trainer import DPOTrainer
 from trl.trainer.utils import DPODataCollatorWithPadding
 
-from transformers import Trainer
+from transformers import Trainer, TrainerCallback
 from transformers.trainer import is_sagemaker_mp_enabled, get_parameter_names, has_length, ALL_LAYERNORM_LAYERS, logger, is_accelerate_available, is_datasets_available#, GradientAccumulationPlugin
 from transformers.trainer_utils import seed_worker
 from transformers.trainer_pt_utils import get_length_grouped_indices as get_length_grouped_indices_hf
@@ -236,6 +236,98 @@ class LengthGroupedSampler(Sampler):
             else:
                 indices = get_length_grouped_indices_auto_single(self.lengths, self.batch_size, self.world_size, generator=self.generator)
         return iter(indices)
+
+
+class ImageLoggingCallback(TrainerCallback):
+    """Logs a 4x4 grid of generated images to wandb every N steps, with and without CFG."""
+
+    UNCOND_PROMPT = (
+        "An image of aerial view, overexposed, low quality, deformation, "
+        "a poor composition, bad hands, bad teeth, bad eyes, bad limbs, distortion"
+    )
+
+    def __init__(self, tokenizer, vq_model_ckpt, prompts, latent_size, codebook_size=64000, cfg_scale=6.0):
+        self.tokenizer = tokenizer
+        self.vq_model_ckpt = vq_model_ckpt
+        self.prompts = prompts
+        self.latent_size = latent_size
+        self.codebook_size = codebook_size
+        self.cfg_scale = cfg_scale
+        self._vq_model = None
+
+    def _load_vq_model(self, device):
+        if self._vq_model is None:
+            from simpar.model.tokenizer.cosmos_tokenizer.networks import TokenizerConfigs
+            from simpar.model.tokenizer.cosmos_tokenizer.video_lib import CausalVideoTokenizer
+            config = TokenizerConfigs["DV"].value
+            config.update(dict(spatial_compression=16, temporal_compression=8))
+            self._vq_model = CausalVideoTokenizer(
+                checkpoint_enc=f"{self.vq_model_ckpt}/encoder.jit",
+                checkpoint_dec=f"{self.vq_model_ckpt}/decoder.jit",
+                tokenizer_config=config,
+            )
+            self._vq_model.eval().requires_grad_(False).to(device)
+        return self._vq_model
+
+    @torch.inference_mode()
+    def _generate(self, model, use_cfg):
+        from transformers.generation import LogitsProcessorList
+        from simpar.model.language_model.simpar_qwen2 import CFGLogits
+
+        device = torch.cuda.current_device()
+        max_new_tokens = self.latent_size ** 2
+        index_samples = []
+
+        # Unwrap DeepSpeed / DDP if needed
+        base_model = model.module if hasattr(model, "module") else model
+
+        for prompt in self.prompts:
+            input_ids = self.tokenizer(
+                "<|t2i|>A highly realistic image of " + prompt + "<|soi|>",
+                return_tensors="pt"
+            ).input_ids.to(device)
+
+            cfg_scale = self.cfg_scale if use_cfg else 1.0
+            uncond_ids = None
+            if use_cfg:
+                uncond_ids = self.tokenizer(
+                    "<|t2i|>" + self.UNCOND_PROMPT + "<|soi|>", return_tensors="pt"
+                ).input_ids.to(device)
+
+            output_ids = base_model.generate(
+                inputs=input_ids,
+                logits_processor=LogitsProcessorList([CFGLogits(cfg_scale, uncond_ids, base_model)]),
+                do_sample=True, temperature=1.0, top_p=1.0,
+                top_k=self.codebook_size, max_new_tokens=max_new_tokens, use_cache=True,
+            )
+            tokens = output_ids[:, input_ids.shape[1]: input_ids.shape[1] + max_new_tokens].clone()
+            tokens = (tokens - len(self.tokenizer)).clamp(0, self.codebook_size - 1)
+            index_samples.append(tokens.reshape(-1, self.latent_size, self.latent_size).unsqueeze(1))
+
+        vq_model = self._load_vq_model(device)
+        images = []
+        for idx in index_samples:
+            img = vq_model.decode(idx).squeeze(2)
+            images.append(((img.clamp(-1, 1) + 1) / 2)[0].cpu())
+        return images
+
+    def on_step_end(self, args, state, control, model=None, **kwargs):
+        step = state.global_step - 1  # zero-indexed
+        if args.log_images_every <= 0 or step % args.log_images_every != 0:
+            return
+
+        import wandb
+        from torchvision.utils import make_grid
+
+        model.eval()
+        try:
+            for use_cfg, tag in [(True, "train/images_cfg"), (False, "train/images_no_cfg")]:
+                images = self._generate(model, use_cfg)
+                if state.is_world_process_zero:
+                    grid = make_grid(images, nrow=4)
+                    wandb.log({tag: wandb.Image(grid.float().permute(1, 2, 0).numpy())}, step=step)
+        finally:
+            model.train()
 
 
 class LLaVATrainer(Trainer):

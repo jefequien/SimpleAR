@@ -15,6 +15,7 @@
 #    limitations under the License.
 
 import ast
+import functools
 import os
 import copy
 from dataclasses import dataclass, field
@@ -40,7 +41,7 @@ import deepspeed
 from transformers import AutoConfig
 from torch.utils.data import Dataset, ConcatDataset
 from simpar.constants import IGNORE_INDEX, DEFAULT_IMAGE_TOKEN
-from simpar.train.llava_trainer import LLaVATrainer
+from simpar.train.llava_trainer import LLaVATrainer, ImageLoggingCallback
 
 from simpar import conversation as conversation_lib
 from simpar.model import *
@@ -180,6 +181,7 @@ class TrainingArguments(transformers.TrainingArguments):
     gradient_checkpointing: bool = field(default=True)
     verbose_logging: bool = field(default=False)
     attn_implementation: str = field(default="flash_attention_2", metadata={"help": "Use transformers attention implementation."})
+    log_images_every: int = field(default=0, metadata={"help": "Log generated images to wandb every N steps. 0 disables."})
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):
@@ -1104,6 +1106,28 @@ def train(attn_implementation=None):
     
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
     trainer = LLaVATrainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+
+    if training_args.log_images_every > 0:
+        import random, numpy as _np
+        dataset = data_module["train_dataset"]
+        indices = random.sample(range(len(dataset)), min(16, len(dataset)))
+        log_prompts = []
+        for idx in indices:
+            with open(dataset.list_data_dict[idx]["label_path"]) as f:
+                log_prompts.append(f.readline().strip())
+        latent_size = int(_np.load(dataset.list_data_dict[0]["code_path"]).shape[-1])
+        vq_ckpt = getattr(model_args, "vq_model_ckpt", None) or "./checkpoints/Cosmos-1.0-Tokenizer-DV8x16x16"
+        trainer.add_callback(ImageLoggingCallback(
+            tokenizer=tokenizer,
+            vq_model_ckpt=vq_ckpt,
+            prompts=log_prompts,
+            latent_size=latent_size,
+            codebook_size=codebook_size,
+        ))
+
+    # PyTorch 2.6+ defaults weights_only=True which blocks DeepSpeed checkpoint globals.
+    _orig_torch_load = torch.load
+    torch.load = functools.partial(_orig_torch_load, weights_only=False)
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)
