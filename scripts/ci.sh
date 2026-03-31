@@ -33,7 +33,7 @@ fi
 # -------------------------------
 #  Install
 # -------------------------------
-uv sync --extra train
+source scripts/install_env.sh
 
 # -------------------------------
 #  Test

@@ -46,6 +46,11 @@ fi
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 
+# -------------------------------
+#  Install
+# -------------------------------
+source scripts/install_env.sh
+
 # Create sbatch output dir if needed
 if [ -n "$SLURM_JOB_ID" ]; then
     mkdir -p sbatch

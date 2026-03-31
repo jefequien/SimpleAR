@@ -49,6 +49,11 @@ export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
+# -------------------------------
+#  Install
+# -------------------------------
+source scripts/install_env.sh
+
 # Persist compiled Triton kernels in the repo's .cache dir (portable across machines)
 # SLURM_SUBMIT_DIR is set by sbatch to the submission directory; fall back to $PWD for local runs.
 export TORCHINDUCTOR_CACHE_DIR="${SLURM_SUBMIT_DIR:-$PWD}/.cache/torchinductor"
