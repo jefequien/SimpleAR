@@ -61,6 +61,7 @@ train = [
     "imageio",
     "ijson",
     "transformers@git+https://github.com/huggingface/transformers.git@7bbc62474391aff64f63fcc064c975752d1fa4de",
+    "tokenizers==0.20.1",
     "trl==0.15.2",
 ]
 
