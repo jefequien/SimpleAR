@@ -10,7 +10,7 @@ CHUNKS=${#GPULIST[@]}
 for IDX in $(seq 0 $((CHUNKS-1))); do
     CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} uv run python -m simpar.eval.model_t2i \
     --model-path ${CKPT_PATH} \
-    --save_dir ./outputs/visualize2/${CKPT_PATH} \
+    --save_dir ./outputs/visualize/${SAVE_FOLDER} \
     --ann_path "./eval/geneval/prompts/evaluation_metadata.jsonl" \
     --vq-model "cosmos" \
     --vq-model-ckpt "./checkpoints/Cosmos-1.0-Tokenizer-DV8x16x16" \
