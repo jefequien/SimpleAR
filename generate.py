@@ -80,8 +80,8 @@ def generate(model, vq_model, tokenizer, prompts, save_dir, args):
                 )
 
             input_dict = {
-                "prompt_token_ids": input_ids.squeeze(0), 
-                "negative_prompt_token_ids": uncond_input_ids.squeeze(0)
+                "prompt_token_ids": input_ids.squeeze(0).tolist(), 
+                "negative_prompt_token_ids": uncond_input_ids.squeeze(0).tolist()
             }
             t1 = time.time()
             with torch.inference_mode():
@@ -148,10 +148,10 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-path", type=str, default="./checkpoints/simpar_1.5B_rl")
+    parser.add_argument("--model-path", type=str, default="Daniel0724/SimpleAR-1.5B-RL")
     parser.add_argument("--vq-model-ckpt", type=str, default="./checkpoints/Cosmos-1.0-Tokenizer-DV8x16x16")
     parser.add_argument("--prompts", nargs="+", default=["Inside a warm room with a large window showcasing a picturesque winter landscape, three gleaming ruby red necklaces are elegantly laid out on the plush surface of a deep purple velvet jewelry box. The gentle glow from the overhead light accentuates the rich color and intricate design of the necklaces. Just beyond the glass pane, snowflakes can be seen gently falling to coat the ground outside in a blanket of white."])
-    parser.add_argument("--save_dir", type=str, default="./visualize")
+    parser.add_argument("--save_dir", type=str, default="./outputs/visualize")
     parser.add_argument("--sjd_sampling", action="store_true", default=False)
     parser.add_argument("--vllm_serving", action="store_true")
     parser.add_argument("--image-size", type=int, choices=[256, 512, 768, 1024], default=1024)

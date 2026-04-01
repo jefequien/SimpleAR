@@ -10,7 +10,7 @@ CHUNKS=${#GPULIST[@]}
 for IDX in $(seq 0 $((CHUNKS-1))); do
     CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} uv run python -m simpar.eval.model_t2i \
     --model-path ${CKPT_PATH} \
-    --save_dir "./visualize/${SAVE_FOLDER}" \
+    --save_dir "./outputs/visualize/${SAVE_FOLDER}" \
     --ann_path "./eval/ELLA/dpg_bench/prompts" \
     --vq-model "cosmos" \
     --vq-model-ckpt "./checkpoints/Cosmos-1.0-Tokenizer-DV8x16x16" \
@@ -23,6 +23,7 @@ for IDX in $(seq 0 $((CHUNKS-1))); do
     --num-images-per-prompt 4 \
     --num-chunks $CHUNKS \
     --chunk-idx $IDX \
+    --vllm_serving \
     --cfg-scale $CFG_SCALE &
 done
 wait

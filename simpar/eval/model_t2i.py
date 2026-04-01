@@ -11,11 +11,17 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
+try:
+    from vllm import SamplingParams
+    IS_VLLM_AVAILABLE = True
+except:
+    IS_VLLM_AVAILABLE = False
+
 import transformers
 
 from simpar.model.tokenizer.cosmos_tokenizer.networks import TokenizerConfigs
 from simpar.model.tokenizer.cosmos_tokenizer.video_lib import CausalVideoTokenizer as CosmosTokenizer
-from simpar.model.builder import load_pretrained_model
+from simpar.model.builder import vllm_t2i, load_pretrained_model
 from simpar.utils import disable_torch_init
 from simpar.mm_utils import get_model_name_from_path
 from simpar.train.t2i_data import EvalT2IDataset
@@ -73,28 +79,70 @@ def evaluate(model, vq_model, tokenizer, dataloader, save_dir, args):
         uncond_input_ids = uncond_input_ids.to(args.device)
         uncond_attention_masks = uncond_attention_masks.to(args.device)
 
-        input_ids = input_ids.repeat(args.num_images_per_prompt, 1)
-        attention_masks = attention_masks.repeat(args.num_images_per_prompt, 1)
-        uncond_input_ids = uncond_input_ids.repeat(args.num_images_per_prompt, 1)
-        uncond_attention_masks = uncond_attention_masks.repeat(args.num_images_per_prompt, 1)
+        if not args.vllm_serving: # inference with hf
+            input_ids = input_ids.repeat(args.num_images_per_prompt, 1)
+            attention_masks = attention_masks.repeat(args.num_images_per_prompt, 1)
+            uncond_input_ids = uncond_input_ids.repeat(args.num_images_per_prompt, 1)
+            uncond_attention_masks = uncond_attention_masks.repeat(args.num_images_per_prompt, 1)
 
-        t1 = time.time()
-        output_ids = model.generate_visual(
-            input_ids,
-            attention_mask=attention_masks,
-            negative_prompt_ids=uncond_input_ids,
-            negative_prompt_attention_mask=uncond_attention_masks,
-            cfg_scale=args.cfg_scale,
-            do_sample=True if args.temperature > 0 else False,
-            temperature=args.temperature,
-            top_p=args.top_p,
-            top_k=args.top_k,
-            max_new_tokens=max_new_tokens,
-            use_cache=True
-        )
-        sampling_time = time.time() - t1
-        llm_time += sampling_time
-        index_sample = output_ids[:, input_ids.shape[1]: input_ids.shape[1] + max_new_tokens].clone() 
+            t1 = time.time()
+            output_ids = model.generate_visual(
+                input_ids,
+                negative_prompt_ids=uncond_input_ids,
+                cfg_scale=args.cfg_scale,
+                do_sample=True,
+                temperature=args.temperature,
+                top_p=args.top_p,
+                top_k=args.top_k,
+                max_new_tokens=max_new_tokens,
+                use_cache=True
+            )
+            
+            sampling_time = time.time() - t1
+            llm_time += sampling_time
+            index_sample = output_ids[:, input_ids.shape[1]: input_ids.shape[1] + max_new_tokens].clone()
+        
+        else:
+            if args.top_k is None:
+                sampling_params = SamplingParams(
+                    temperature=args.temperature,
+                    top_p=args.top_p,
+                    max_tokens=max_new_tokens,
+                    guidance_scale=args.cfg_scale
+                )
+            else:
+                sampling_params = SamplingParams(
+                    temperature=args.temperature,
+                    top_p=args.top_p,
+                    top_k=args.top_k,
+                    max_tokens=max_new_tokens,
+                    guidance_scale=args.cfg_scale
+                )
+
+            # For vLLM, we pass a list of identical prompts to get multiple images
+            prompts = []
+            for _ in range(args.num_images_per_prompt):
+                # input_ids is (batch_size, seq_len). Since we evaluation usually has batch_size=1
+                # we use input_ids[0]. If batch_size > 1, we might need a more complex loop.
+                # Here we assume batch_size=1 as per typical eval scripts.
+                prompts.append({
+                    "prompt_token_ids": input_ids[0].tolist(), 
+                    "negative_prompt_token_ids": uncond_input_ids[0].tolist()
+                })
+
+            t1 = time.time()
+            with torch.inference_mode():
+                outs = model.generate(
+                    prompts,
+                    sampling_params,
+                    use_tqdm=False
+                )
+            sampling_time = time.time() - t1
+            llm_time += sampling_time
+
+            # Collect all outputs
+            output_token_ids = [out.outputs[0].token_ids for out in outs]
+            index_sample = torch.tensor(output_token_ids, dtype=torch.long, device=args.device)
         
         # VQGAN decoding
         index_sample = index_sample - len(tokenizer)
@@ -166,7 +214,11 @@ def main(args):
     vq_model.requires_grad_(False)
 
     model_path = os.path.expanduser(args.model_path)    
-    tokenizer, model, _, _  = load_pretrained_model(model_path, attn_implementation="sdpa")
+    if not args.vllm_serving:
+        tokenizer, model, _, _  = load_pretrained_model(model_path, attn_implementation="sdpa")
+    else:
+        assert IS_VLLM_AVAILABLE, "VLLM is not installed."
+        tokenizer, model = vllm_t2i(model_path=model_path)
     dataset = EvalT2IDataset(
         image_folder = args.data_dir, data_path = args.ann_path, tokenizer = tokenizer, image_size=args.image_size, benchmark = args.benchmark, num_chunks=args.num_chunks, chunk_idx=args.chunk_idx
     )
@@ -190,6 +242,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_dir", type=str, default="visualize")
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--vllm_serving", action="store_true")
     parser.add_argument("--image-size", type=int, choices=[256, 512, 768, 1024], default=1024)
     parser.add_argument("--top_p", type=float, default=1.0)
     parser.add_argument("--top_k", type=int, default=None)

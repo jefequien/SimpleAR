@@ -43,5 +43,5 @@ def load_pretrained_model(model_path, device_map="auto", attn_implementation="fl
 
 def vllm_t2i(model_path, device_map="bfloat16"):
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
-    model = LLM(model=model_path, tokenizer=model_path, tensor_parallel_size=1, gpu_memory_utilization=0.2, use_v2_block_manager=True, dtype=device_map)
+    model = LLM(model=model_path, tokenizer=model_path, tensor_parallel_size=1, gpu_memory_utilization=0.2, dtype=device_map)
     return tokenizer, model

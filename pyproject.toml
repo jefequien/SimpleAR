@@ -53,7 +53,11 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "markdown2[all]",
+    "vllm",
 ]
+
+[tool.uv.sources]
+vllm = { path = "eval/vllm", editable = true }
 
 [dependency-groups]
 dev = [
